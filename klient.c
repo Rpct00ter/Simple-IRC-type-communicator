@@ -5,21 +5,24 @@
 #include <netdb.h>
 #include <sys/types.h>
 #include <string.h>
+int sendToServer(char* argu, char* argv){
+  int fd, rc;
+  char buf[256];
+  fd = socket(PF_INET, SOCK_STREAM, 0);
+  struct sockaddr_in addr;
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(atoi(argv));
+  struct hostent* addrent;
+  addrent = gethostbyname(argu);
+  memcpy(&addr.sin_addr.s_addr, addrent->h_addr, addrent->h_length);
+  connect(fd, (struct sockaddr*) &addr, sizeof(addr));
+  rc = read(fd, buf, sizeof(buf));
+  write(1, buf, rc);
+  close (fd);
+  return 0;
+}
 
 int main(int argc, char* argv[]){
-    int fd, rc;
-    char buf[256];
-    fd = socket(PF_INET, SOCK_STREAM, 0);
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(atoi(argv[2]));
-    struct hostent* addrent;
-    addrent = gethostbyname(argv[1]);
-    memcpy(&addr.sin_addr.s_addr, addrent->h_addr, addrent->h_length);
-    connect(fd, (struct sockaddr*) &addr, sizeof(addr));
-    rc = read(fd, buf, sizeof(buf));
-    write(1, buf, rc);
-    close (fd);
     int choice;
     while(1){
       printf("1 -> Log out\n");
@@ -35,7 +38,7 @@ int main(int argc, char* argv[]){
           //Exit
           return 0;
         case 2:
-          //Watch rooms online
+          sendToServer(argv[1], argv[2]);
           break;
         case 3:
           //Watch online users
