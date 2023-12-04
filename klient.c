@@ -20,4 +20,38 @@ int main(int argc, char* argv[]){
     rc = read(fd, buf, sizeof(buf));
     write(1, buf, rc);
     close (fd);
+    int choice;
+    while(1){
+      printf("1 -> Log out\n");
+      printf("2 -> Show online roomsp\n");
+      printf("3 -> Show online users\n");
+      printf("4 -> Create room\n");
+      printf("5 -> Join room\n");
+      printf("6 -> Private message\n");
+      printf("7 -> Change your status\n");
+      scanf("%d", &choice);
+      switch(choice){
+        case 1:
+          //Exit
+          return 0;
+        case 2:
+          //Watch rooms online
+          break;
+        case 3:
+          //Watch online users
+          break;
+        case 4:
+          //Create room
+          break;
+        case 5:
+          //Join room
+          break;
+        case 6:
+          //Text priv (open chat with user)
+          break;
+        case 7:
+          //Change your status (shows during online users lookup)
+          break;
+        }
+    }
 }
