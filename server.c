@@ -1,62 +1,72 @@
 #include <stdio.h>
-#include <unistd.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <netdb.h>
-#include <sys/types.h>
+#include <pthread.h>
 #include <string.h>
-#include <sys/select.h>
+
+struct cln {
+    int cfd;
+    struct sockaddr_in caddr;
+};
+
+void* cthread(void* arg) {
+    int* cfd_ptr = (int*)arg;
+    int cfd = *cfd_ptr;
+    char buf[256];
+    
+    while (1) {
+        ssize_t rc = read(cfd, buf, sizeof(buf));
+        if (rc <= 0) {
+            // Error or connection closed, break from the loop
+            break;
+        }
+
+        // Null-terminate the received data
+        buf[rc] = '\0';
+
+        // Display the received message
+        printf("[%lu] Received message from client: %s\n",
+               (unsigned long int)pthread_self(), buf);
+
+        // Send the received message back to the client
+        write(cfd, buf, strlen(buf));
+    }
+
+    // Close the client socket
+    close(cfd);
+    free(cfd_ptr);
+
+    return NULL;
+}
 
 int main() {
-  int sfd, cfd, fdmax, fda, rc, i;
-  socklen_t sl;
-  struct sockaddr_in saddr, caddr;
-  static struct timeval timeout;
-  fd_set mask, rmask, wmask;
-  //Socket setup
-  saddr.sin_family = AF_INET;
-  saddr.sin_addr.s_addr = INADDR_ANY;
-  saddr.sin_port = htons(1234);
-  sfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-  bind(sfd, (struct sockaddr*) &saddr, sizeof(saddr));
-  listen(sfd, 10);
-  //Select FD sets
-  FD_ZERO(&mask);
-  FD_ZERO(&rmask);
-  FD_ZERO(&wmask);
-  fdmax = sfd;
-  //Loop
-  while (1) {
-    FD_SET(sfd, &rmask);
-    wmask = mask;
-    timeout.tv_sec = 5 * 60;
-    timeout.tv_usec = 0;
-    rc = select(fdmax + 1, &rmask, &wmask, (fd_set*)0, &timeout);
-    if (rc == 0) continue;
-    fda = rc;
-    // Handling new connections
-    if (FD_ISSET(sfd, &rmask)) {
-        fda -= 1;
-        sl = sizeof(caddr);
-        cfd = accept(sfd, (struct sockaddr*)&caddr, &sl);
-        FD_SET(cfd, &mask);
-        if (cfd > fdmax) fdmax = cfd;
+    pthread_t tid;
+    socklen_t sl;
+    int sfd;
+
+    struct sockaddr_in saddr;
+    saddr.sin_family = AF_INET;
+    saddr.sin_addr.s_addr = INADDR_ANY;
+    saddr.sin_port = htons(1234);
+
+    sfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    bind(sfd, (struct sockaddr*)&saddr, sizeof(saddr));
+    listen(sfd, 10);
+
+    while (1) {
+        int* cfd_ptr = malloc(sizeof(int));
+        sl = sizeof(struct sockaddr_in);
+        *cfd_ptr = accept(sfd, (struct sockaddr*)&saddr, &sl);
+
+        pthread_create(&tid, NULL, cthread, cfd_ptr);
+        pthread_detach(tid);
     }
-    // Handling existing connections
-    for (i = sfd + 1; i <= fdmax && fda > 0; i++) {
-        if (FD_ISSET(i, &wmask)) {
-            fda -= 1;
-            write(i, "Hello World!\n", 13);
-            close(i);
-            FD_CLR(i, &mask);
-            if (i == fdmax)
-                while (fdmax > sfd && !FD_ISSET(fdmax, &mask))
-                    fdmax -= 1;
-        }
-    }
-  }
-  close(sfd);
-  return 0;
+
+    // Close the server socket (this part will not be reached in this example)
+    close(sfd);
+
+    return 0;
 }
