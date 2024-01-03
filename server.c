@@ -10,12 +10,17 @@
 struct cln {
     int cfd;
     struct sockaddr_in caddr;
+    char nickname[20];
 };
 
 void* cthread(void* arg) {
-    int* cfd_ptr = (int*)arg;
-    int cfd = *cfd_ptr;
+    struct cln* client_info = (struct cln*)arg;
+    int cfd = client_info->cfd;
     char buf[256];
+    
+    ssize_t username_rc = read(cfd, client_info->nickname, sizeof(client_info->nickname) - 1);
+    client_info->nickname[username_rc] = '\0';
+    printf("Client connected: %s\n", client_info->nickname);
     
     while (1) {
         ssize_t rc = read(cfd, buf, sizeof(buf));
@@ -31,13 +36,14 @@ void* cthread(void* arg) {
         printf("[%lu] Received message from client: %s\n",
                (unsigned long int)pthread_self(), buf);
 
+
         // Send the received message back to the client
         write(cfd, buf, strlen(buf));
     }
 
     // Close the client socket
     close(cfd);
-    free(cfd_ptr);
+    free(client_info);
 
     return NULL;
 }
