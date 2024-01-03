@@ -166,6 +166,8 @@ void* receiveMessages(void* arg) {
 }
 
 void* sendMessages(void* arg) {
+
+
     int rc;
     char buf[256];
 
@@ -193,10 +195,16 @@ void* sendMessages(void* arg) {
 }
 
 int main(int argc, char* argv[]) {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <hostname> <port>\n", argv[0]);
+        return 1;
+    }
     int choice;
-
+    
     printf("Please, provide Your nick (one word only):\n");
-    scanf("%s", username);
+    fgets(username, sizeof(username), stdin);
+    size_t username_length = strlen(username);
+
 
     // Create a socket
     fd = socket(PF_INET, SOCK_STREAM, 0);
@@ -225,6 +233,13 @@ int main(int argc, char* argv[]) {
         close(fd);
         return 1;
     }
+    
+    // Send the username to the server
+    if (write(fd, username, strlen(username)) == -1) {
+        perror("Error sending username to server");
+        close(fd);
+        return 1;
+    }    
 
     // Create threads for sending and receiving messages
     pthread_t sendThread, receiveThread;
