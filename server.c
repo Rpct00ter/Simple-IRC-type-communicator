@@ -7,11 +7,37 @@
 #include <pthread.h>
 #include <string.h>
 
+#define MAX_USERS 15
+#define MAX_USERNAME_LENGTH 20
+
 struct cln {
     int cfd;
     struct sockaddr_in caddr;
-    char nickname[20];
+    char nickname[MAX_USERNAME_LENGTH];
 };
+
+struct users {
+    size_t counter;
+    char usernames[MAX_USERS][MAX_USERNAME_LENGTH];
+};
+struct users users;
+
+void addUser(struct users* userList, const char* usernames) {
+    if (userList->counter < MAX_USERS) {
+        strcpy(userList->usernames[userList->counter], usernames);
+        userList->counter++;
+    } else {
+        printf("User list is full. Cannot add more users.\n");
+    }
+}
+
+void showAllUsernames(struct users* userList) {
+    printf("All usernames:\n");
+    for (size_t i = 0; i < userList->counter; ++i) {
+        printf("- %s\n", userList->usernames[i]);
+    }
+}
+   
 
 void* cthread(void* arg) {
     struct cln* client_info = (struct cln*)arg;
@@ -21,6 +47,7 @@ void* cthread(void* arg) {
     ssize_t username_rc = read(cfd, client_info->nickname, sizeof(client_info->nickname) - 1);
     client_info->nickname[username_rc] = '\0';
     printf("Client connected: %s\n", client_info->nickname);
+    addUser(&users, client_info->nickname);
     
     while (1) {
         ssize_t rc = read(cfd, buf, sizeof(buf));
@@ -31,7 +58,10 @@ void* cthread(void* arg) {
 
         // Null-terminate the received data
         buf[rc] = '\0';
-
+        if (strcmp(buf, "show_users") == 0) {
+            // Handle the command to show all usernames
+            showAllUsernames(&users);
+        } else {
         // Display the received message
         printf("[%lu] Received message from client: %s\n",
                (unsigned long int)pthread_self(), buf);
@@ -39,6 +69,7 @@ void* cthread(void* arg) {
 
         // Send the received message back to the client
         write(cfd, buf, strlen(buf));
+        }
     }
 
     // Close the client socket
