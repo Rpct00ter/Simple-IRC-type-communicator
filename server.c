@@ -9,11 +9,14 @@
 
 #define MAX_USERS 15
 #define MAX_USERNAME_LENGTH 20
+#define MAX_ROOMS 10
+#define MAX_MEMBERS_PER_ROOM 5
 
 struct cln {
     int cfd;
     struct sockaddr_in caddr;
     char nickname[MAX_USERNAME_LENGTH];
+    char current_room[MAX_USERNAME_LENGTH]; 
 };
 
 struct users {
@@ -21,6 +24,18 @@ struct users {
     char usernames[MAX_USERS][MAX_USERNAME_LENGTH];
 };
 struct users users;
+
+struct room {
+    char name[MAX_USERNAME_LENGTH];
+    struct cln* members[MAX_MEMBERS_PER_ROOM];
+    size_t num_members;
+};
+
+struct rooms {
+    size_t counter;
+    struct room room_list[MAX_ROOMS];
+};
+struct rooms rooms;
 
 void addUser(struct users* userList, const char* usernames) {
     if (userList->counter < MAX_USERS) {
@@ -31,6 +46,46 @@ void addUser(struct users* userList, const char* usernames) {
     }
 }
 
+// Function to add a room to the global room list
+void addRoom(const char* room_name) {
+    if (rooms.counter < MAX_ROOMS) {
+        strcpy(rooms.room_list[rooms.counter].name, room_name);
+        rooms.room_list[rooms.counter].num_members = 0;
+        rooms.counter++;
+    } else {
+        printf("Room list is full. Cannot add more rooms.\n");
+    }
+}
+
+// Function to add a client to a room
+void addClientToRoom(struct cln* client, const char* room_name) {
+    for (size_t i = 0; i < rooms.counter; ++i) {
+        if (strcmp(rooms.room_list[i].name, room_name) == 0) {
+            if (rooms.room_list[i].num_members < MAX_MEMBERS_PER_ROOM) {
+                rooms.room_list[i].members[rooms.room_list[i].num_members] = client;
+                rooms.room_list[i].num_members++;
+                strcpy(client->current_room, room_name);
+            } else {
+                printf("Room is full. Cannot add more members.\n");
+            }
+            break;
+        }
+    }
+}
+
+// Function to show all connected users in a room
+void showRoomMembers(struct cln* client) {
+    printf("Room members in '%s':\n", client->current_room);
+    for (size_t i = 0; i < rooms.counter; ++i) {
+        if (strcmp(rooms.room_list[i].name, client->current_room) == 0) {
+            for (size_t j = 0; j < rooms.room_list[i].num_members; ++j) {
+                printf("- %s\n", rooms.room_list[i].members[j]->nickname);
+            }
+            break;
+        }
+    }
+}
+
 void showAllUsernames(struct users* userList) {
     printf("All usernames:\n");
     for (size_t i = 0; i < userList->counter; ++i) {
@@ -38,6 +93,12 @@ void showAllUsernames(struct users* userList) {
     }
 }
    
+void showAllRooms() {
+    printf("All rooms:\n");
+    for (size_t i = 0; i < rooms.counter; ++i) {
+        printf("- %s\n", rooms.room_list[i].name);
+    }
+}
 
 void* cthread(void* arg) {
     struct cln* client_info = (struct cln*)arg;
@@ -61,14 +122,28 @@ void* cthread(void* arg) {
         if (strcmp(buf, "show_users") == 0) {
             // Handle the command to show all usernames
             showAllUsernames(&users);
+        } else if (strncmp(buf, "create_room", 11) == 0) {
+            // Handle the command to create a room
+            char room_name[MAX_USERNAME_LENGTH];
+            sscanf(buf, "create_room %s", room_name);
+            addRoom(room_name);
+            addClientToRoom(client_info, room_name);
+        } else if (strncmp(buf, "join_room", 9) == 0) {
+            // Handle the command to join a room
+            char room_name[MAX_USERNAME_LENGTH];
+            sscanf(buf, "join_room %s", room_name);
+            addClientToRoom(client_info, room_name);
+        } else if (strcmp(buf, "show_room_members") == 0) {
+            // Handle the command to show room members
+            showRoomMembers(client_info);
+        } else if (strcmp(buf, "show_all_rooms") == 0) {
+            // Handle the command to show all rooms
+            showAllRooms();
         } else {
-        // Display the received message
-        printf("[%lu] Received message from client: %s\n",
-               (unsigned long int)pthread_self(), buf);
-
-
-        // Send the received message back to the client
-        write(cfd, buf, strlen(buf));
+            // Display and respond to the received message
+            printf("[%s] Received message from client: %s\n", client_info->nickname, buf);
+            // Send the received message back to the client
+            write(cfd, buf, strlen(buf));
         }
     }
 
