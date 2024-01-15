@@ -86,6 +86,17 @@ void showRoomMembers(struct cln* client) {
     }
 }
 
+int isClientInRoom(struct cln* client) {
+    for (size_t i = 0; i < rooms.counter; ++i) {
+        for (size_t j = 0; j < rooms.room_list[i].num_members; ++j) {
+            if (strcmp(rooms.room_list[i].members[j]->nickname, client->nickname) == 0) {
+                return 1;  // Client is already in a room
+            }
+        }
+    }
+    return 0;  // Client is not in any room
+}
+
 void showAllUsernames(struct users* userList) {
     printf("All usernames:\n");
     for (size_t i = 0; i < userList->counter; ++i) {
@@ -97,6 +108,55 @@ void showAllRooms() {
     printf("All rooms:\n");
     for (size_t i = 0; i < rooms.counter; ++i) {
         printf("- %s\n", rooms.room_list[i].name);
+    }
+}
+
+// Function to remove a client from a room
+void removeClientFromRoom(struct cln* client) {
+    for (size_t i = 0; i < rooms.counter; ++i) {
+        for (size_t j = 0; j < rooms.room_list[i].num_members; ++j) {
+            if (rooms.room_list[i].members[j] == client) {
+                // Shift the remaining members to fill the gap
+                for (size_t k = j; k < rooms.room_list[i].num_members - 1; ++k) {
+                    rooms.room_list[i].members[k] = rooms.room_list[i].members[k + 1];
+                }
+                rooms.room_list[i].num_members--;
+                client->current_room[0] = '\0';  // Reset the client's current room
+                return;
+            }
+        }
+    }
+}
+
+// Function to notify all other room members that a client has left
+void notifyRoomMembers(struct cln* client) {
+    for (size_t i = 0; i < rooms.counter; ++i) {
+        if (strcmp(rooms.room_list[i].name, client->current_room) == 0) {
+            for (size_t j = 0; j < rooms.room_list[i].num_members; ++j) {
+                int receiver_cfd = rooms.room_list[i].members[j]->cfd;
+                if (receiver_cfd != client->cfd) {
+                    char leave_message[256];
+                    snprintf(leave_message, sizeof(leave_message), "[%s] has left the room.", client->nickname);
+                    write(receiver_cfd, leave_message, strlen(leave_message));
+                }
+            }
+            break;
+        }
+    }
+}
+
+// Function to handle the command to leave a room
+void leaveRoom(struct cln* client_info) {
+    if (!isClientInRoom(client_info)) {
+        // Client is not in any room, inform them
+        write(client_info->cfd, "You are not in any room.", sizeof("You are not in any room.") - 1);
+    } else {
+        // Notify room members that the client has left
+        notifyRoomMembers(client_info);
+        // Remove the client from the room
+        removeClientFromRoom(client_info);
+        // Inform the client that they have left the room
+        write(client_info->cfd, "You have left the room.", sizeof("You have left the room.") - 1);
     }
 }
 
@@ -123,30 +183,54 @@ void* cthread(void* arg) {
             // Handle the command to show all usernames
             showAllUsernames(&users);
         } else if (strncmp(buf, "create_room", 11) == 0) {
-            // Handle the command to create a room
-            char room_name[MAX_USERNAME_LENGTH];
-            sscanf(buf, "create_room %s", room_name);
-            addRoom(room_name);
-            addClientToRoom(client_info, room_name);
+            if (isClientInRoom(client_info)) {
+            // Client is already in a room, inform them of their current room
+            write(client_info->cfd, "You are already in a room.", sizeof("You are already in a room.") - 1);
+            } else {
+                // Handle the command to create a room
+                char room_name[MAX_USERNAME_LENGTH];
+                sscanf(buf, "create_room %s", room_name);
+                addRoom(room_name);
+                addClientToRoom(client_info, room_name);
+            }
         } else if (strncmp(buf, "join_room", 9) == 0) {
-            // Handle the command to join a room
-            char room_name[MAX_USERNAME_LENGTH];
-            sscanf(buf, "join_room %s", room_name);
-            addClientToRoom(client_info, room_name);
+            if (isClientInRoom(client_info)) {
+            // Client is already in a room, inform them of their current room
+            write(client_info->cfd, "You are already in a room.", sizeof("You are already in a room.") - 1);
+            } else {
+                // Handle the command to join a room
+                char room_name[MAX_USERNAME_LENGTH];
+                sscanf(buf, "join_room %s", room_name);
+                addClientToRoom(client_info, room_name);
+            }
         } else if (strcmp(buf, "show_room_members") == 0) {
             // Handle the command to show room members
             showRoomMembers(client_info);
         } else if (strcmp(buf, "show_all_rooms") == 0) {
             // Handle the command to show all rooms
             showAllRooms();
+        } else if (strcmp(buf, "leave_room") == 0) {
+        leaveRoom(client_info);
         } else {
             // Display and respond to the received message
             printf("[%s] Received message from client: %s\n", client_info->nickname, buf);
-            // Send the received message back to the client
-            write(cfd, buf, strlen(buf));
+            // Send the received message with the sender's name to all clients in the same room
+            for (size_t i = 0; i < rooms.counter; ++i) {
+                if (strcmp(rooms.room_list[i].name, client_info->current_room) == 0) {
+                    for (size_t j = 0; j < rooms.room_list[i].num_members; ++j) {
+                        int receiver_cfd = rooms.room_list[i].members[j]->cfd;
+                        if (receiver_cfd != cfd) {  // Exclude the sender
+                            // Prepend sender's name to the message
+                            char message_with_sender[280];
+                            snprintf(message_with_sender, sizeof(message_with_sender), "[%s] %s", client_info->nickname, buf);
+                            write(receiver_cfd, message_with_sender, strlen(message_with_sender));
+                        }
+                    }
+                    break;
+                }
+            }
         }
     }
-
     // Close the client socket
     close(cfd);
     free(client_info);
