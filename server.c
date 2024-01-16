@@ -12,6 +12,7 @@
 #define MAX_ROOMS 10
 #define MAX_MEMBERS_PER_ROOM 5
 
+// Struktura przechowująca informacje o kliencie
 struct cln {
     int cfd;
     struct sockaddr_in caddr;
@@ -19,27 +20,32 @@ struct cln {
     char current_room[MAX_USERNAME_LENGTH]; 
 };
 
+// Struktura przechowująca informacje o użytkownikach
 struct users {
     size_t counter;
     char usernames[MAX_USERS][MAX_USERNAME_LENGTH];
 };
 struct users users;
 
+// Struktura przechowująca informacje o pokoju
 struct room {
     char name[MAX_USERNAME_LENGTH];
     struct cln* members[MAX_MEMBERS_PER_ROOM];
     size_t num_members;
 };
 
+// Struktura przechowująca informacje o wszystkich pokojach
 struct rooms {
     size_t counter;
     struct room room_list[MAX_ROOMS];
 };
 struct rooms rooms;
 
+// Mutexy do synchronizacji dostępu do struktur users i rooms
 pthread_mutex_t users_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t rooms_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+// Funkcja dodająca użytkownika do globalnej listy użytkowników
 void addUser(struct users* userList, const char* usernames) {
     pthread_mutex_lock(&users_mutex);
     if (userList->counter < MAX_USERS) {
@@ -51,7 +57,7 @@ void addUser(struct users* userList, const char* usernames) {
     pthread_mutex_unlock(&users_mutex);
 }
 
-// Function to add a room to the global room list
+// Funkcja dodająca pokój do globalnej listy pokoi
 void addRoom(const char* room_name) {
     pthread_mutex_lock(&rooms_mutex);
     if (rooms.counter < MAX_ROOMS) {
@@ -64,7 +70,7 @@ void addRoom(const char* room_name) {
     pthread_mutex_unlock(&rooms_mutex);
 }
 
-// Function to add a client to a room
+// Funkcja dodająca klienta do pokoju
 void addClientToRoom(struct cln* client, const char* room_name) {
     pthread_mutex_lock(&rooms_mutex);
     for (size_t i = 0; i < rooms.counter; ++i) {
@@ -82,6 +88,7 @@ void addClientToRoom(struct cln* client, const char* room_name) {
     pthread_mutex_unlock(&rooms_mutex);
 }
 
+// Funkcja wyświetlająca członków pokoju dla danego klienta
 void showRoomMembers(struct cln* client) {
     char message[512];
     sprintf(message, "Room members in '%s':\n", client->current_room);
@@ -98,21 +105,22 @@ void showRoomMembers(struct cln* client) {
     write(client->cfd, message, strlen(message));
 }
 
-
+// Funkcja sprawdzająca, czy klient jest już w pokoju
 int isClientInRoom(struct cln* client) {
     pthread_mutex_lock(&rooms_mutex);
     for (size_t i = 0; i < rooms.counter; ++i) {
         for (size_t j = 0; j < rooms.room_list[i].num_members; ++j) {
             if (strcmp(rooms.room_list[i].members[j]->nickname, client->nickname) == 0) {
                 pthread_mutex_unlock(&rooms_mutex);
-                return 1;  // Client is already in a room
+                return 1;  // Klient jest już w pokoju
             }
         }
     }
     pthread_mutex_unlock(&rooms_mutex);
-    return 0;  // Client is not in any room
+    return 0;  // Klient nie jest w żadnym pokoju
 }
 
+// Funkcja wyświetlająca wszystkie nazwy zalogowanych użytkowników
 void showAllUsernames(struct cln* client) {
     char message[512];
     pthread_mutex_lock(&users_mutex);
@@ -123,7 +131,8 @@ void showAllUsernames(struct cln* client) {
     pthread_mutex_unlock(&users_mutex);
     write(client->cfd, message, strlen(message));
 }
-   
+
+// Funkcja wyświetlająca nazwy wszystkich stworzonych pokoi   
 void showAllRooms(struct cln* client) {
     char message[512];
     pthread_mutex_lock(&rooms_mutex);
@@ -135,18 +144,18 @@ void showAllRooms(struct cln* client) {
     write(client->cfd, message, strlen(message));
 }
 
-// Function to remove a client from a room
+// Funkcja usuwająca klienta z pokoju
 void removeClientFromRoom(struct cln* client) {
     pthread_mutex_lock(&rooms_mutex);
     for (size_t i = 0; i < rooms.counter; ++i) {
         for (size_t j = 0; j < rooms.room_list[i].num_members; ++j) {
             if (rooms.room_list[i].members[j] == client) {
-                // Shift the remaining members to fill the gap
+                // Przesunięcie pozostałych członków, aby zapełnić lukę
                 for (size_t k = j; k < rooms.room_list[i].num_members - 1; ++k) {
                     rooms.room_list[i].members[k] = rooms.room_list[i].members[k + 1];
                 }
                 rooms.room_list[i].num_members--;
-                client->current_room[0] = '\0';  // Reset the client's current room
+                client->current_room[0] = '\0';  // Zresetowanie aktualnego pokoju klienta
                 pthread_mutex_unlock(&rooms_mutex);
                 return;
             }
@@ -155,7 +164,7 @@ void removeClientFromRoom(struct cln* client) {
     pthread_mutex_unlock(&rooms_mutex);
 }
 
-// Function to notify all other room members that a client has left
+// Funkcja powiadamiająca wszystkich pozostałych członków pokoju, że klient opuścił pokój
 void notifyRoomMembers(struct cln* client) {
     pthread_mutex_lock(&rooms_mutex);
     for (size_t i = 0; i < rooms.counter; ++i) {
@@ -174,21 +183,22 @@ void notifyRoomMembers(struct cln* client) {
     pthread_mutex_unlock(&rooms_mutex);
 }
 
-// Function to handle the command to leave a room
+// Funkcja obsługująca polecenie opuszczenia pokoju
 void leaveRoom(struct cln* client_info) {
     if (!isClientInRoom(client_info)) {
-        // Client is not in any room, inform them
+        // Powiadomienie klienta, że nie jest w żadnym pokoju
         write(client_info->cfd, "You are not in any room.", sizeof("You are not in any room.") - 1);
     } else {
-        // Notify room members that the client has left
+        // Powiadom pozostałych członków pokoju, że klient odszedł
         notifyRoomMembers(client_info);
-        // Remove the client from the room
+        // Usuń klienta z pokoju
         removeClientFromRoom(client_info);
-        // Inform the client that they have left the room
+        // Poinformuj klienta o udanym opuszczeniu pokoju
         write(client_info->cfd, "You have left the room.", sizeof("You have left the room.") - 1);
     }
 }
 
+// Wątek obsługujący komunikację z klientem
 void* cthread(void* arg) {
     struct cln* client_info = (struct cln*)arg;
     int cfd = client_info->cfd;
@@ -202,57 +212,66 @@ void* cthread(void* arg) {
     while (1) {
         ssize_t rc = read(cfd, buf, sizeof(buf));
         if (rc <= 0) {
-            // Error or connection closed, break from the loop
+            // Błąd lub zamknięcie połączenia, wyjście z pętli
             break;
         }
 
-        // Null-terminate the received data
+
         buf[rc] = '\0';
-        if (strcmp(buf, "show_users") == 0) {
-            // Handle the command to show all usernames
+       //Wychodzenie z aplikacji
+       if (strcmp(buf, "exit") == 0) {
+            leaveRoom(client_info);
+            close(cfd);
+            //free(client_info);        
+        //Wyswietlanie wszystkich użytkownikow na komende "show_users"        
+        } else if (strcmp(buf, "show_users") == 0) {
             showAllUsernames(client_info);
+        //Tworzenie pokoju na komende "create_room"            
         } else if (strncmp(buf, "create_room", 11) == 0) {
             if (isClientInRoom(client_info)) {
-                // Client is already in a room, inform them of their current room
+                // Klient jest już w pokoju, wyslanie mu info
                 write(client_info->cfd, "You are already in a room.", sizeof("You are already in a room.") - 1);
             } else {
-                // Handle the command to create a room
+                // Jesli nie ma klienta w pokoju, to moze stworzyc pokoj
                 char room_name[MAX_USERNAME_LENGTH];
                 sscanf(buf, "create_room %s", room_name);
                 addRoom(room_name);
                 addClientToRoom(client_info, room_name);
-                // Send confirmation to the client
+                //Potwierdzenie o utworzeniu pokoju
                 write(client_info->cfd, "Room created successfully.", sizeof("Room created successfully.") - 1);
             }
+        //Proba dolaczenia do pokoju    
         } else if (strncmp(buf, "join_room", 9) == 0) {
             if (isClientInRoom(client_info)) {
-                // Client is already in a room, inform them of their current room
+                // Klient jest już w pokoju, wyslanie mu info
                 write(client_info->cfd, "You are already in a room.", sizeof("You are already in a room.") - 1);
             } else {
-                // Handle the command to join a room
+                // Jesli nie ma klienta w pokoju, to mozna go dodac
                 char room_name[MAX_USERNAME_LENGTH];
                 sscanf(buf, "join_room %s", room_name);
                 addClientToRoom(client_info, room_name);
-                // Send confirmation to the client
+                //Potwierdzenie o dolaczeniu do pokoju
                 write(client_info->cfd, "Joined the room successfully.", sizeof("Joined the room successfully.") - 1);
             }
+        //Pokazanie klientowi osob w obecnym pokoju    
         } else if (strcmp(buf, "show_room_members") == 0) {
-            // Handle the command to show room members
             showRoomMembers(client_info);
+        //Pokazanie klientowi wszystkich dostepnych pokoi    
         } else if (strcmp(buf, "show_all_rooms") == 0) {
-            // Handle the command to show all rooms
             showAllRooms(client_info);
+        //Proba opuszczenia pokoju przez klienta    
         } else if (strcmp(buf, "leave_room") == 0) {
             leaveRoom(client_info);
+        //Jesli nie ma zadnej konkretnej metody to klient wysyla wiadomosci w obszarze pokoju do ktorego nalezy
         } else {
-            // Display and respond to the received message
+            // Wyswietlenie na serwerze otrzymania wiadomosci
             printf("[%s] Received message from client: %s\n", client_info->nickname, buf);
-            // Send the received message with the sender's name to all clients in the same room
+            //Wysyłanie widaomości w obrębie pokoju
             for (size_t i = 0; i < rooms.counter; ++i) {
                 if (strcmp(rooms.room_list[i].name, client_info->current_room) == 0) {
                     for (size_t j = 0; j < rooms.room_list[i].num_members; ++j) {
                         int receiver_cfd = rooms.room_list[i].members[j]->cfd;
-                        // Prepend sender's name to the message
+                        //Przekazanie w wiadomości informacji o nadawcy
                         char message_with_sender[280];
                         snprintf(message_with_sender, sizeof(message_with_sender), "[%s] %s", client_info->nickname, buf);
                         write(receiver_cfd, message_with_sender, strlen(message_with_sender));
@@ -263,8 +282,8 @@ void* cthread(void* arg) {
             }
         }
     }
-    // Close the client socket
-    close(cfd);
+    //Zamknięcie socketu klienta
+    //close(cfd);
     free(client_info);
 
     return NULL;
@@ -293,7 +312,7 @@ int main() {
         pthread_detach(tid);
     }
 
-    // Close the server socket (this part will not be reached in this example)
+    //Zamkniecie socketu servera
     close(sfd);
 
     return 0;
