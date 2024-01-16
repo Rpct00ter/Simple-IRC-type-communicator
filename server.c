@@ -252,12 +252,11 @@ void* cthread(void* arg) {
                 if (strcmp(rooms.room_list[i].name, client_info->current_room) == 0) {
                     for (size_t j = 0; j < rooms.room_list[i].num_members; ++j) {
                         int receiver_cfd = rooms.room_list[i].members[j]->cfd;
-                        if (receiver_cfd != cfd) {  // Exclude the sender
-                            // Prepend sender's name to the message
-                            char message_with_sender[280];
-                            snprintf(message_with_sender, sizeof(message_with_sender), "[%s] %s", client_info->nickname, buf);
-                            write(receiver_cfd, message_with_sender, strlen(message_with_sender));
-                        }
+                        // Prepend sender's name to the message
+                        char message_with_sender[280];
+                        snprintf(message_with_sender, sizeof(message_with_sender), "[%s] %s", client_info->nickname, buf);
+                        write(receiver_cfd, message_with_sender, strlen(message_with_sender));
+    
                     }
                     break;
                 }
