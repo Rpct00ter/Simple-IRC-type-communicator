@@ -1,9 +1,1 @@
--Simple connection between client & server between at least 2 clients
--Implementation of few basic options
--Client persona creation (unique name editing, no registration and passwords)
--Chat-room creation (with #name & password)
--Joining chat-rooms, viewing it's content
--Deleting user files after logging off
--Deleting rooms after everyone has logged off
--Dealing with multiple clients
--Encryption
+
