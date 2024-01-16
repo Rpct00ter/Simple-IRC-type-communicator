@@ -37,17 +37,23 @@ struct rooms {
 };
 struct rooms rooms;
 
+pthread_mutex_t users_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t rooms_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 void addUser(struct users* userList, const char* usernames) {
+    pthread_mutex_lock(&users_mutex);
     if (userList->counter < MAX_USERS) {
         strcpy(userList->usernames[userList->counter], usernames);
         userList->counter++;
     } else {
         printf("User list is full. Cannot add more users.\n");
     }
+    pthread_mutex_unlock(&users_mutex);
 }
 
 // Function to add a room to the global room list
 void addRoom(const char* room_name) {
+    pthread_mutex_lock(&rooms_mutex);
     if (rooms.counter < MAX_ROOMS) {
         strcpy(rooms.room_list[rooms.counter].name, room_name);
         rooms.room_list[rooms.counter].num_members = 0;
@@ -55,10 +61,12 @@ void addRoom(const char* room_name) {
     } else {
         printf("Room list is full. Cannot add more rooms.\n");
     }
+    pthread_mutex_unlock(&rooms_mutex);
 }
 
 // Function to add a client to a room
 void addClientToRoom(struct cln* client, const char* room_name) {
+    pthread_mutex_lock(&rooms_mutex);
     for (size_t i = 0; i < rooms.counter; ++i) {
         if (strcmp(rooms.room_list[i].name, room_name) == 0) {
             if (rooms.room_list[i].num_members < MAX_MEMBERS_PER_ROOM) {
@@ -71,48 +79,65 @@ void addClientToRoom(struct cln* client, const char* room_name) {
             break;
         }
     }
+    pthread_mutex_unlock(&rooms_mutex);
 }
 
-// Function to show all connected users in a room
 void showRoomMembers(struct cln* client) {
-    printf("Room members in '%s':\n", client->current_room);
+    char message[512];
+    sprintf(message, "Room members in '%s':\n", client->current_room);
+    pthread_mutex_lock(&rooms_mutex);
     for (size_t i = 0; i < rooms.counter; ++i) {
         if (strcmp(rooms.room_list[i].name, client->current_room) == 0) {
             for (size_t j = 0; j < rooms.room_list[i].num_members; ++j) {
-                printf("- %s\n", rooms.room_list[i].members[j]->nickname);
+                sprintf(message + strlen(message), "- %s\n", rooms.room_list[i].members[j]->nickname);
             }
             break;
         }
     }
+    pthread_mutex_unlock(&rooms_mutex);
+    write(client->cfd, message, strlen(message));
 }
 
+
 int isClientInRoom(struct cln* client) {
+    pthread_mutex_lock(&rooms_mutex);
     for (size_t i = 0; i < rooms.counter; ++i) {
         for (size_t j = 0; j < rooms.room_list[i].num_members; ++j) {
             if (strcmp(rooms.room_list[i].members[j]->nickname, client->nickname) == 0) {
+                pthread_mutex_unlock(&rooms_mutex);
                 return 1;  // Client is already in a room
             }
         }
     }
+    pthread_mutex_unlock(&rooms_mutex);
     return 0;  // Client is not in any room
 }
 
-void showAllUsernames(struct users* userList) {
-    printf("All usernames:\n");
-    for (size_t i = 0; i < userList->counter; ++i) {
-        printf("- %s\n", userList->usernames[i]);
+void showAllUsernames(struct cln* client) {
+    char message[512];
+    pthread_mutex_lock(&users_mutex);
+    sprintf(message, "All usernames:\n");
+    for (size_t i = 0; i < users.counter; ++i) {
+        sprintf(message + strlen(message), "- %s\n", users.usernames[i]);
     }
+    pthread_mutex_unlock(&users_mutex);
+    write(client->cfd, message, strlen(message));
 }
    
-void showAllRooms() {
-    printf("All rooms:\n");
+void showAllRooms(struct cln* client) {
+    char message[512];
+    pthread_mutex_lock(&rooms_mutex);
+    sprintf(message, "All rooms:\n");
     for (size_t i = 0; i < rooms.counter; ++i) {
-        printf("- %s\n", rooms.room_list[i].name);
+        sprintf(message + strlen(message), "- %s\n", rooms.room_list[i].name);
     }
+    pthread_mutex_unlock(&rooms_mutex);
+    write(client->cfd, message, strlen(message));
 }
 
 // Function to remove a client from a room
 void removeClientFromRoom(struct cln* client) {
+    pthread_mutex_lock(&rooms_mutex);
     for (size_t i = 0; i < rooms.counter; ++i) {
         for (size_t j = 0; j < rooms.room_list[i].num_members; ++j) {
             if (rooms.room_list[i].members[j] == client) {
@@ -122,14 +147,17 @@ void removeClientFromRoom(struct cln* client) {
                 }
                 rooms.room_list[i].num_members--;
                 client->current_room[0] = '\0';  // Reset the client's current room
+                pthread_mutex_unlock(&rooms_mutex);
                 return;
             }
         }
     }
+    pthread_mutex_unlock(&rooms_mutex);
 }
 
 // Function to notify all other room members that a client has left
 void notifyRoomMembers(struct cln* client) {
+    pthread_mutex_lock(&rooms_mutex);
     for (size_t i = 0; i < rooms.counter; ++i) {
         if (strcmp(rooms.room_list[i].name, client->current_room) == 0) {
             for (size_t j = 0; j < rooms.room_list[i].num_members; ++j) {
@@ -143,6 +171,7 @@ void notifyRoomMembers(struct cln* client) {
             break;
         }
     }
+    pthread_mutex_unlock(&rooms_mutex);
 }
 
 // Function to handle the command to leave a room
@@ -181,36 +210,40 @@ void* cthread(void* arg) {
         buf[rc] = '\0';
         if (strcmp(buf, "show_users") == 0) {
             // Handle the command to show all usernames
-            showAllUsernames(&users);
+            showAllUsernames(client_info);
         } else if (strncmp(buf, "create_room", 11) == 0) {
             if (isClientInRoom(client_info)) {
-            // Client is already in a room, inform them of their current room
-            write(client_info->cfd, "You are already in a room.", sizeof("You are already in a room.") - 1);
+                // Client is already in a room, inform them of their current room
+                write(client_info->cfd, "You are already in a room.", sizeof("You are already in a room.") - 1);
             } else {
                 // Handle the command to create a room
                 char room_name[MAX_USERNAME_LENGTH];
                 sscanf(buf, "create_room %s", room_name);
                 addRoom(room_name);
                 addClientToRoom(client_info, room_name);
+                // Send confirmation to the client
+                write(client_info->cfd, "Room created successfully.", sizeof("Room created successfully.") - 1);
             }
         } else if (strncmp(buf, "join_room", 9) == 0) {
             if (isClientInRoom(client_info)) {
-            // Client is already in a room, inform them of their current room
-            write(client_info->cfd, "You are already in a room.", sizeof("You are already in a room.") - 1);
+                // Client is already in a room, inform them of their current room
+                write(client_info->cfd, "You are already in a room.", sizeof("You are already in a room.") - 1);
             } else {
                 // Handle the command to join a room
                 char room_name[MAX_USERNAME_LENGTH];
                 sscanf(buf, "join_room %s", room_name);
                 addClientToRoom(client_info, room_name);
+                // Send confirmation to the client
+                write(client_info->cfd, "Joined the room successfully.", sizeof("Joined the room successfully.") - 1);
             }
         } else if (strcmp(buf, "show_room_members") == 0) {
             // Handle the command to show room members
             showRoomMembers(client_info);
         } else if (strcmp(buf, "show_all_rooms") == 0) {
             // Handle the command to show all rooms
-            showAllRooms();
+            showAllRooms(client_info);
         } else if (strcmp(buf, "leave_room") == 0) {
-        leaveRoom(client_info);
+            leaveRoom(client_info);
         } else {
             // Display and respond to the received message
             printf("[%s] Received message from client: %s\n", client_info->nickname, buf);
