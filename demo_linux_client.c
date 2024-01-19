@@ -1,3 +1,4 @@
+//Client currently suffers from the "exit" option issues
 #include <stdio.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
