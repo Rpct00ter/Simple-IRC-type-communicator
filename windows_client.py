@@ -1,8 +1,9 @@
-mport tkinter as tk
+import tkinter as tk
 from tkinter import scrolledtext
 import socket
 import threading
 
+#Funkcje wysylania i odbierania wiadomosci
 def receive_messages():
     while True:
         try:
@@ -24,11 +25,12 @@ def send_message():
     except Exception as e:
         print("Error writing to server:", e)
 
-# Set up the GUI
-root = tk.Tk()
-root.title("Simple Chat Client")
 
-# Create and pack widgets
+#GUI
+root = tk.Tk()
+root.title("IRC type communicator")
+
+
 message_box = scrolledtext.ScrolledText(root, wrap=tk.WORD, width=40, height=15)
 message_box.pack(padx=10, pady=10)
 
@@ -38,17 +40,17 @@ input_entry.pack(padx=10, pady=10)
 send_button = tk.Button(root, text="Send", command=send_message)
 send_button.pack(pady=10)
 
-# Get user input for username
+
 username = input("Please provide your nick (one word only):\n")
 
-# Create a socket
+
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-# Set up the server address
+
 host = input("Enter server hostname: ")
 port = int(input("Enter server port: "))
 
-# Connect to the server
+#Proba polaczenia z serwerem
 try:
     client_socket.connect((host, port))
 except Exception as e:
@@ -56,7 +58,7 @@ except Exception as e:
     client_socket.close()
     exit(1)
 
-# Send the username to the server
+#Przeslanie nazwy klienta do serwera
 try:
     client_socket.sendall(username.encode('utf-8'))
 except Exception as e:
@@ -75,15 +77,14 @@ print("show_room_members -> shows all current room members")
 print("leave_room -> leave the current room")
 print("exit -> exit the app")
 
-# Create threads for sending and receiving messages
+#Watek odbierajacy wiadomosci od serwera
 receive_thread = threading.Thread(target=receive_messages)
 receive_thread.start()
 
-# Start the Tkinter main loop
+
 root.mainloop()
 
-# Wait for the receive thread to finish
 receive_thread.join()
 
-# Close the socket when done
+#Zamkniecie socketu
 client_socket.close()
